@@ -1,11 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 using System.Xml;
-using System.Xml.Schema;
 using System.Xml.Xsl;
 
 namespace FormGenerator
@@ -14,63 +12,125 @@ namespace FormGenerator
     {
         public static void Main(string[] args)
         {
-            XsltSettings settings = new XsltSettings(true, true);
-            XslCompiledTransform transform = new XslCompiledTransform();
-            transform.Load(@"xsd2html2xml.xsl", settings, new XmlUrlResolver());
-            var x = Test();
-            File.WriteAllText(@"D:\Work\form-generator\abc.xsd", x);
-            transform.Transform(@"D:\_code\PaymentSafe2.5_GIT\BaseCommon\Networks\NetworkFiles\NetworkFiles\SWIFT\2023\XSD\Category 1\MT103\MT103.xsd",
-                @"D:\Work\form-generator\camt.056.001.08.html");
+            var schemaPath = args.ElementAtOrDefault(0)
+                              ?? Path.Combine(AppContext.BaseDirectory, "SampleData", "sample.xsd");
+            var outputDirectory = args.ElementAtOrDefault(1)
+                                 ?? Path.Combine(AppContext.BaseDirectory, "GeneratedAngular");
+
+            var html = TransformSchemaToHtml(schemaPath);
+            var component = CreateAngularComponentFiles(html, outputDirectory);
+
+            Console.WriteLine($"Angular component created at {component.TemplatePath}");
         }
 
-        public static string Test()
+        private static string TransformSchemaToHtml(string schemaPath)
         {
-            // List of schema file paths to merge
-            var schemaFiles = new List<string>
-        {
-            @"D:\_code\PaymentSafe2.5_GIT\BaseCommon\Networks\NetworkFiles\NetworkFiles\SWIFT\2023\XSD\Base Schemas\SWIFTBaseTypes.xsd",
-            @"D:\_code\PaymentSafe2.5_GIT\BaseCommon\Networks\NetworkFiles\NetworkFiles\SWIFT\2023\XSD\Category 1\MT103\MT103.xsd"  // Add other schema paths as needed
-        };
-
-            // Create a schema set to load and merge schemas
-            var schemaSet = new XmlSchemaSet();
-
-            // Load each schema from the list
-            foreach (var schemaFile in schemaFiles)
+            if (!File.Exists(schemaPath))
             {
-                using (var stream = File.OpenRead(schemaFile))
-                {
-                    var schema = XmlSchema.Read(stream, ValidationEventHandler);
-                    schemaSet.Add(schema);
-                }
+                throw new FileNotFoundException($"Schema not found at '{schemaPath}'.");
             }
 
-            // Merge the schemas into a single XML Schema
-            var mergedSchema = new XmlSchema();
-            foreach (XmlSchema schema in schemaSet.Schemas())
-            {
-                mergedSchema.Includes.Add(schema);
-            }
+            var settings = new XsltSettings(true, true);
+            var transform = new XslCompiledTransform();
+            var xslPath = Path.Combine(AppContext.BaseDirectory, "xsd2html2xml.xsl");
+            transform.Load(xslPath, settings, new XmlUrlResolver());
 
-            // Serialize the merged schema into an XML string
             var stringBuilder = new StringBuilder();
-            var xmlWriterSettings = new XmlWriterSettings
+            using (var writer = XmlWriter.Create(stringBuilder, transform.OutputSettings))
+            using (var reader = XmlReader.Create(schemaPath))
             {
-                Indent = true,
-                Encoding = Encoding.UTF8,
-            };
-
-            using (var writer = XmlWriter.Create(stringBuilder, xmlWriterSettings))
-            {
-                mergedSchema.Write(writer);
+                transform.Transform(reader, writer);
             }
 
             return stringBuilder.ToString();
         }
 
-        static void ValidationEventHandler(object sender, ValidationEventArgs e)
+        private static ComponentPaths CreateAngularComponentFiles(string htmlDocument, string outputDirectory)
         {
-            Console.WriteLine($"Schema validation error: {e.Message}");
+            Directory.CreateDirectory(outputDirectory);
+
+            var bodyMatch = Regex.Match(htmlDocument, "<body[^>]*>([\\s\\S]*?)</body>", RegexOptions.IgnoreCase);
+            var bodyContent = bodyMatch.Success ? bodyMatch.Groups[1].Value : htmlDocument;
+
+            var styleMatches = Regex.Matches(htmlDocument, "<style[^>]*>([\\s\\S]*?)</style>", RegexOptions.IgnoreCase);
+            var extractedStyles = string.Join(Environment.NewLine + Environment.NewLine,
+                styleMatches.Cast<Match>().Select(m => m.Groups[1].Value.Trim()));
+
+            var scriptMatches = Regex.Matches(bodyContent, "<script[^>]*>([\\s\\S]*?)</script>", RegexOptions.IgnoreCase);
+            var scriptContent = string.Join(Environment.NewLine + Environment.NewLine,
+                scriptMatches.Cast<Match>().Select(m => m.Groups[1].Value.Trim()));
+
+            var templateContent = Regex.Replace(bodyContent, "<script[\\s\\S]*?</script>", string.Empty,
+                RegexOptions.IgnoreCase).Trim();
+
+            var templatePath = Path.Combine(outputDirectory, "generated-form.component.html");
+            var stylesPath = Path.Combine(outputDirectory, "generated-form.component.css");
+            var componentPath = Path.Combine(outputDirectory, "generated-form.component.ts");
+
+            File.WriteAllText(templatePath, templateContent);
+            File.WriteAllText(stylesPath, string.IsNullOrWhiteSpace(extractedStyles)
+                ? "/* Styling generated from schema will appear here if provided. */"
+                : extractedStyles);
+            File.WriteAllText(componentPath, BuildComponentSource(scriptContent));
+
+            return new ComponentPaths(templatePath, stylesPath, componentPath);
+        }
+
+        private static string BuildComponentSource(string scriptContent)
+        {
+            return @$"import {{ AfterViewInit, Component, ElementRef }} from '@angular/core';
+
+@Component({{
+  selector: 'app-generated-form',
+  templateUrl: './generated-form.component.html',
+  styleUrls: ['./generated-form.component.css']
+}})
+export class GeneratedFormComponent implements AfterViewInit {{
+  constructor(private readonly host: ElementRef<HTMLElement>) {{}}
+
+  ngAfterViewInit(): void {{
+    this.injectGeneratedBehaviour();
+  }}
+
+  private injectGeneratedBehaviour(): void {{
+    const scriptContent = `{EscapeForTemplateLiteral(scriptContent ?? string.Empty)}`;
+    if (!scriptContent.trim()) {{
+      return;
+    }}
+
+    const script = document.createElement('script');
+    script.type = 'text/javascript';
+    script.text = scriptContent;
+    this.host.nativeElement.appendChild(script);
+  }}
+}}
+";
+        }
+
+        private static string EscapeForTemplateLiteral(string value)
+        {
+            return value
+                .Replace("\\", "\\\\")
+                .Replace("`", "\\`")
+                .Replace("${", "${'${'}")
+                .Replace("\r", "\\r")
+                .Replace("\n", "\\n");
+        }
+
+        private class ComponentPaths
+        {
+            public ComponentPaths(string templatePath, string stylesPath, string componentPath)
+            {
+                TemplatePath = templatePath;
+                StylesPath = stylesPath;
+                ComponentPath = componentPath;
+            }
+
+            public string TemplatePath { get; }
+
+            public string StylesPath { get; }
+
+            public string ComponentPath { get; }
         }
     }
 }
