@@ -169,7 +169,7 @@
 	<xsl:template name="add-metadata">
 		<xsl:param name="xml-document"></xsl:param>
 		
-		<xsl:element name="head">
+                <xsl:element name="head">
 			<xsl:element name="title">
 				<xsl:value-of select="$config-title" />
 			</xsl:element>
@@ -191,7 +191,7 @@
 				</xsl:element>
 			</xsl:if>
 			
-			<xsl:call-template name="add-style" />
+                        <xsl:call-template name="add-style" />
 			
 			<xsl:call-template name="add-polyfills" />
 			<xsl:call-template name="add-xml-generators" />
@@ -201,13 +201,14 @@
 			<xsl:call-template name="add-initial-calls" />
 			
 			<xsl:if test="not($config-script = '')">
-				<xsl:element name="script">
-					<xsl:attribute name="type">text/javascript</xsl:attribute>
-					<xsl:attribute name="src">
-						<xsl:value-of select="$config-script" />
-					</xsl:attribute>
-				</xsl:element>
-			</xsl:if>
+                                <xsl:element name="script">
+                                        <xsl:attribute name="type">text/javascript</xsl:attribute>
+                                        <xsl:attribute name="data-generated-for">angular</xsl:attribute>
+                                        <xsl:attribute name="src">
+                                                <xsl:value-of select="$config-script" />
+                                        </xsl:attribute>
+                                </xsl:element>
+                        </xsl:if>
 			
 			<!-- add a generator meta element -->
 			<xsl:element name="meta">
@@ -274,8 +275,9 @@
 			</xsl:for-each>
 		</xsl:variable>
 		
-		<xsl:element name="body">
-			<xsl:element name="form">
+                <xsl:element name="body">
+                        <xsl:attribute name="data-generated-for">angular</xsl:attribute>
+                        <xsl:element name="form">
 				<!-- disable default form action -->
 				<xsl:attribute name="action">javascript:void(0);</xsl:attribute>
 				
