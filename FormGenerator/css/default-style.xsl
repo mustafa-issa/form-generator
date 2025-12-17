@@ -3,12 +3,13 @@
 	xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
 	xmlns:xs="http://www.w3.org/2001/XMLSchema">
 	
-	<xsl:template name="add-style">
-		<xsl:element name="style">
-			<xsl:attribute name="type">text/css</xsl:attribute>
-			<xsl:text>
-				[hidden] {
-					display: none;
+        <xsl:template name="add-style">
+                <xsl:element name="style">
+                        <xsl:attribute name="type">text/css</xsl:attribute>
+                        <xsl:attribute name="data-generated-for">angular</xsl:attribute>
+                        <xsl:text>
+                                [hidden] {
+                                        display: none;
 				}
 				section {
 					margin: 5px;
